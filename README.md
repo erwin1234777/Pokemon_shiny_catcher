@@ -4,8 +4,7 @@
 
 ## This is a script used to capture pokémon for the game Pókemon Unbound
 
-# Be sure to star it!
-![image](https://github.com/erwin1234777/Pokemon_shiny_catcher/assets/29512349/edc7e8c2-eaa7-4e1c-9169-c8cafe59f30c)
+![image](https://github.com/erwin1234777/Pokemon_shiny_catcher/assets/29512349/a3255565-c35a-4575-9559-6e890fb2ce49)
 
 ### Requirements:
 - Ensure you have the official ROM (other roms may work, but please be advised it may not work as intended, you may modify the script to work with other verions under LICENSE included) in the official sources (as of writing this, use their Discord server at [https://discord.com/invite/k34Jm4T](https://discord.com/invite/k34Jm4T))
