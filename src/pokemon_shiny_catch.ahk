@@ -18,6 +18,8 @@ if not (FileExist(config)) {
             lastColor=0x000000
         [PokeOptions]
             sunStarter=0
+        [Global]
+            speedModifier=1
         [CitraMappings]
         [mGBAMappings]
         [Other]
@@ -30,6 +32,10 @@ if not (FileExist(config)) {
 startTime := A_TickCount
 currentlyTrue := "="
 stopped := 1
+startedLoopAt := A_Now
+finishedLoopAt := A_Now
+loopDuration := finishedLoopAt - startedLoopAt
+encounterPerHour := Ceil(3600 / loopDuration)
 
 ; ini variables
 IniRead, xCord, % config, Coordinates, xCord, 0
@@ -42,11 +48,14 @@ IniRead, sunStarter, % config, PokeOptions, sunStarter, 0
 IniRead, citra_pid, % config, Other, citra_pid, 0
 IniRead, IterationCount, % config, Other, IterationCount, 0
 IniRead, checkWinActive, % config, Other, checkWinActive, 1
+IniRead, speedModifier, % config, Global, speedModifier, 1
+
+speedModifierPerc := Ceil(speedModifier * 100)
 
 ;; make an object called citra_mappings with the property a = string b
 
 _citraMappings := {KeyA:"a", KeyB:"s", KeyX:"z", KeyY:"x", KeyL:"q", KeyR:"w", KeyZl:"1", KeyZr:"2", KeyStart:"m", KeySelect:"n", KeyHome:"b", KeyDebug:"o", DpadUp:"4", DpadLeft:"5", DpadRight:"6", DpadDown:"7"}
-
+_mGBAMappings := {KeyA:"f4", KeyB:"f5", KeyL:"q", KeyR:"s", KeyStart:"f8", KeySelect:"f9", DpadUp:"f6", DpadLeft:"a", DpadRight:"d", DpadDown:"f7"}
 ResetGUI(running := false, runningGiven := false, citraRunning := false, citraShinyRunning := false) {
     global
     Gui, Destroy
@@ -54,28 +63,40 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
     ; x10 x100 x190 grid
     ; y+30 grid y80 y120 y150 y180 y210 y240 y280
 
-    ;help buttons
-    Gui, Add, Button, gGeneralHelp x370 y370 w20 h20, ?
+    ;help buttons on text
+    Gui, Add, Button, gSetGameSpeed x370 y80 w20 h20, +
+
+    Gui, Add, Button, gLoopStats x370 y115 w20 h20, ?
+
+    Gui, Add, Button, gSunStarterHelp x230 y55 w20 h20, ?
+
+    ; help buttons on buttons
+
     Gui, Add, Button, gStaticPKMNHelp x90 y185 w20 h20, ?
     Gui, Add, Button, gGivenPKMNHelp x230 y185 w20 h20, ?
     Gui, Add, Button, gEggPKMNHelp x370 y185 w20 h20, ?
 
-    ; first row
-    Gui, Add, Button, gStartButton x10 y180 w80 h30, StaticPKMN 
-    Gui, Add, Button, gGivenButton x150 y180 w80 h30, GivenPKMN
-    Gui, Add, Button, gEggPKMN x290 y180 w80 h30, EggPKMN
-    ; second row
-    Gui, Add, Button, cGreen BackgroundTrans cRED gStopButton x10 y210 w80 h30, Stop
-    Gui, Add, Button, gResetButton x150 y210 w80 h30, Reset Timer/Count
-    Gui, Add, Button, gReloadButton x290 y210 w80 h30, Reload
-    ; third row
-    Gui, Add, Button, gGetColor x10 y240 w80 h30, Get Color
-    Gui, Add, Button, gActiveWin x150 y240 w80 h30, ForceWindow
-    Gui, Add, Button, gTestButton x290 y240 w80 h30, Test
-    ; fourth row
-    Gui, Add, Button, gCitraSunStarter x10 y270 w80 h30, StartSunStarter
-    Gui, Add, Button, gSetMouseClickPos x150 y270 w80 h30, MouseClickPos
-    Gui, Add, Button, gSetStarter x290 y270 w80 h30, SetSunPKMN
+    Gui, Add, Button, gGeneralHelp x370 y370 w20 h20, ?
+
+    ; first row y180
+    Gui, Add, Button, gStartButton x10 y180 w80 h30, mGBA`nStatic
+    Gui, Add, Button, gGivenButton x150 y180 w80 h30, mGBA`nGiven
+    Gui, Add, Button, gEggPKMN x290 y180 w80 h30, mGBA`nEgg
+    ; second row y210
+    Gui, Add, Button, gTestButton x10 y210 w80 h30, Citra`nStatic
+    Gui, Add, Button, gCitraSunStarter x150 y210 w80 h30, Citra`nSunStarter
+    Gui, Add, Button, gSetStarter x290 y210 w80 h30, Citra`nStarterPick
+    ; third row y240
+
+    ; fourth row y270
+    Gui, Add, Button, cGreen BackgroundTrans cRED gStopButton x10 y270 w80 h30, Stop
+    Gui, Add, Button, gResetButton x150 y270 w80 h30, Reset Timer/Count
+    Gui, Add, Button, gReloadButton x290 y270 w80 h30, Reload
+    ; fifth row y300
+    Gui, Add, Button, gGetColor x10 y300 w80 h30, Get Color
+    Gui, Add, Button, gActiveWin x150 y300 w80 h30, ForceWindow
+    Gui, Add, Button, gSetMouseClickPos x290 y300 w80 h30, MouseClickPos
+
 
     ;icons
     Gui, Add, Progress, x200 y350 w15 h15 c%lastColor% vLastColorGUI, 100
@@ -93,12 +114,16 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
     if(sunStarter) {
          Gui, Add, Text, x150 y50 w80 h30, Sun Starter: %sunStarter%
     }
+    FormatTime,finishedLoopAt,%finishedLoopAt%,HH:mm:ss tt
+    Gui, Add, Text, x290 y50 w80 h30, Last ran at: %finishedLoopAt%
     ;row 3
     Gui, Add, Text, x10 y80 w80 h30, X: %xCord%
     Gui, Add, Text, x150 y80 w80 h30, ClickX: %clickXCord%
+    Gui, Add, Text, x290 y80 w80 h30, Game Speed: %speedModifierPerc%`%
     ;row 4
     Gui, Add, Text, x10 y110 w80 h30, Y: %yCord%
     Gui, Add, Text, x150 y110 w80 h30, ClickY: %clickYCord%
+    Gui, Add, Text, vLoops x290 y110 w80 h30, Stats: %loopDuration%s[%encounterPerHour%En/h]
     ;row 5
     Gui, Add, Text, x150 y140 w80 h30 Center vStatusLabel, Stopped ; Add a text control to display the status
     Gui, Add, Text, vCurrentlyTrue x220 y350 w15 h15, %currentlyTrue%
@@ -169,7 +194,6 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
     ;;    GuiControl,, StatusLabel, Testing ControlSend 2...
     ;;    ControlSend, Citra ,{%bar%}, Citra
     ;;    sleep 1000
-
         citraShinyCatchingInFrontOfPokemon()
 
         return
@@ -197,6 +221,7 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
         IniWrite, % citra_pid, % config, Other, citra_pid
         IniWrite, % IterationCount, % config, Other, IterationCount
         IniWrite, % checkWinActive, % config, Other, checkWinActive
+        IniWrite, % speedModifier, % config, Global, speedModifier
         ExitApp
     StopButton:
         stopped := 1
@@ -205,6 +230,17 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
         checkWinActive := 1
     return
     ReloadButton:
+        IniWrite, % xCord, % config, Coordinates, xCord
+        IniWrite, % yCord, % config, Coordinates, yCord
+        IniWrite, % clickXCord, % config, Coordinates, clickXCord
+        IniWrite, % clickYCord, % config, Coordinates, clickYCord
+        IniWrite, % targetColor, % config, ColorSearch, targetColor
+        IniWrite, % lastColor, % config, ColorSearch, lastColor
+        IniWrite, % sunStarter, % config, PokeOptions, sunStarter
+        IniWrite, % citra_pid, % config, Other, citra_pid
+        IniWrite, % IterationCount, % config, Other, IterationCount
+        IniWrite, % checkWinActive, % config, Other, checkWinActive
+        IniWrite, % speedModifier, % config, Global, speedModifier
         Reload
     ResetButton:
         IterationCount := 0
@@ -214,39 +250,62 @@ ResetGUI(running := false, runningGiven := false, citraRunning := false, citraSh
     EggPKMN:
     return
     StaticPKMNHelp:
-    MsgBox, Placeholder for help with Static Pokemon and how to set it up
+        MsgBox, Placeholder for help with Static Pokemon and how to set it up
     return
     GivenPKMNHelp:
-    MsgBox, Placeholder for help with Gift/Given Pokemon and how to set it up
+        MsgBox, Placeholder for help with Gift/Given Pokemon and how to set it up
     return
     EggPKMNHelp:
-    MsgBox, Placeholder for help with Egg Pokemon and how to set it up
+        MsgBox, Placeholder for help with Egg Pokemon and how to set it up
+    return
+    SunStarterHelp:
+        MsgBox, Placeholder for help with SunStarter picker
     return
     GeneralHelp:
-    MsgBox, Make sure the keybinds are set to `nf4 = a`nf5 = b`nf6 = up`nf7 = down`nf8 = start`nf9 = select.`nMake sure F1 and F2 load state, and that Shift + F1/Shift + F2 save state.`n`n`nThis is used in every script, check scripts help (?) before using them if you are new
+        MsgBox, Make sure the keybinds are set to `nf4 = a`nf5 = b`nf6 = up`nf7 = down`nf8 = start`nf9 = select.`nMake sure F1 and F2 load state, and that Shift + F1/Shift + F2 save state.`n`n`nThis is used in every script, check scripts help (?) before using them if you are new
+    return
+    LoopStats:
+        MsgBox, An average of the LAST run, it does NOT average total runs`n`n`nLast Loop Duration: %loopDuration% seconds`nEncounters Per Hour: %encounterPerHour%.`n`nShorted to %loopDuration%s[%encounterPerHour%En/h]
+    return
+    SetGameSpeed:
+        IniRead, speedModifier, % config, Global, speedModifier, 1
+        speedModifierPerc := Ceil(speedModifier * 100)
+        tempSpeed := 0
+        InputBox, tempSpeed, Speed Selector, Type the `% you are running the game on , 400, 240
+        if(tempSpeed < 0) {
+            MsgBox,0, Error, Please set a speed first. Expected [1-10], got [%tempSpeed%]
+            return
+        }
+        speedModifier := round(tempSpeed / 100, 2)
+        speedModifierPerc := Ceil(speedModifier * 100)
+        ResetGUI()
     return
 }
 
 ResetGUI()
 
 resetFrame() {
+    KeyA := _mGBAMappings["KeyA"]
+    KeyStart := _mGBAMappings["KeyStart"]
+    KeyB := _mGBAMappings["KeyB"]
+
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F8}, mGBA ; f8 = start
+	ControlSend, mGBA ,{%KeyStart%}, mGBA ; f8 = start
       sleep 100
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F4}, mGBA ; f4 = a
+	ControlSend, mGBA ,{%KeyA%}, mGBA ; f4 = a
       sleep 100
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F5}, mGBA ; f5 = b
+	ControlSend, mGBA ,{%KeyB%}, mGBA ; f5 = b
       sleep 100
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F5}, mGBA ; f5 = b
+	ControlSend, mGBA ,{%KeyB%}, mGBA ; f5 = b
       sleep 100
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F5}, mGBA ; f5 = b
+	ControlSend, mGBA ,{%KeyB%}, mGBA ; f5 = b
       sleep 100
 	SetKeyDelay, 0, 25
-	ControlSend, mGBA ,{F5}, mGBA ; f5 = b
+	ControlSend, mGBA ,{%KeyB%}, mGBA ; f5 = b
       sleep 100
 	return
 }
@@ -257,7 +316,7 @@ save() {
         sleep 100
 }
 
-reload() {
+reloadMgba() {
         SetKeyDelay, 0, 100
         ControlSend, mGBA ,{F2}, mGBA
         sleep 50
@@ -282,7 +341,7 @@ startButtonFunc(mode = "emerald") {
             ; f9 = select
             ensureWinActive()
 
-            reload()
+            reloadMgba()
 
 	        resetFrame()
 
@@ -353,45 +412,40 @@ startButtonFunc(mode = "emerald") {
                 break
             }
         } else if(mode = "emerald") {
-            ; mapping
-            ; f4 = a
-            ; f5 = b
-            ; f6 = up
-            ; f7 = down
-            ; f8 = start
-            ; f9 = select
+
             GuiControl,, StatusLabel, Running Emerald...
             ensureWinActive()
-            GuiControl,, StatusLabel, reloading Emerald...
-            reload()
-            GuiControl,, StatusLabel, resetting frame...
+            GuiControl,, StatusLabel, Reloading Emerald...
+            reloadMgba()
+            GuiControl,, StatusLabel, Resetting frame...
             resetFrame()
-            GuiControl,, StatusLabel, saving...
+            GuiControl,, StatusLabel, Saving...
             save()
 
+            DpadUp := _mGBAMappings["DpadUp"]
+            KeyA := _mGBAMappings["KeyA"]
             ;SetKeyDelay, 0, 50
             ;SendEvent {F6} ; f6 = up
             ;sleep 50
-            GuiControl,, StatusLabel, moving up...
-            ;; move up
-            Loop 3 { ; loop f6 = up
-                SetKeyDelay, 0, 100
-                ControlSend, mGBA ,{F6}, mGBA ; f6 = up
-                sleep 70
+            if(mGBAMoveUp) {
+                GuiControl,, StatusLabel, Moving up...
+                SetKeyDelay, 0, 300
+                ControlSend, mGBA, {%DpadRight%}, mGBA
+                SetKeyDelay, 0, 50
             }
-            sleep 800
-            Loop 8 {
-                SetKeyDelay, 0, 100
-                ControlSend, mGBA ,{F4}, mGBA ; f4 = up
-                sleep 70
-            }
-            sleep 400
-            GuiControl,, StatusLabel, getting color...
+            ControlSend, mGBA, {%KeyA%}, mGBA
+            mSleep(10000)
+
+            GuiControl,, StatusLabel, Getting color...
             Gui, Submit, NoHide
             CoordMode, Mouse, Screen
             CoordMode Pixel, Screen
             PixelGetColor, cColor, %xCord%, %yCord%, RGB
-            sleep, 200
+            finishedLoopAt := A_Now
+            loopDuration := finishedLoopAt - startedLoopAt
+            encounterPerHour := Ceil(3600 / loopDuration)
+            GuiControl,, Loops, Stats: %loopDuration%s[%encounterPerHour%En/h]
+
             if (cColor = targetColor) {
                 currentlyTrue := "="
                 if(lastColor = cColor) {
@@ -464,7 +518,7 @@ givenButtonFunc() {
         ; f9 = select
         ensureWinActive()
 
-        reload()
+        reloadMgba()
 
 	    resetFrame()
 
@@ -805,10 +859,14 @@ citraShinyCatchingInFrontOfPokemon() {
     global
     GuiControl,, StatusLabel, Running...
     stopped := 0
+    ;IniRead, xCord, % config, Coordinates, xCord, 0
+    ;IniRead, yCord, % config, Coordinates, yCord, 0
+
     Loop {
         if (stopped) {
             break
         }
+        startedLoopAt := A_Now
         SetTitleMatchMode, 2
         ensureCitraWinActive()
         resetCitraGame()
@@ -819,67 +877,129 @@ citraShinyCatchingInFrontOfPokemon() {
         DpadRight := _citraMappings["DpadRight"]
         DpadDown := _citraMappings["DpadDown"]
         KeyA := _citraMappings["KeyA"]
-       
-        SetKeyDelay, 0, 1000
+
+        useUnstableFirst := true
+        SetKeyDelay, 0, 300
         ControlSend, Citra ,{%DpadUp%}, Citra
         SetKeyDelay, 0, 65
         SendInput {DpadUp down}
-        sleep 1000
+        mSleep(1000)
         SendInput {DpadUp up}
-        sleep 1000
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(1000)
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(1000)
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(1000)
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(1000)
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(2000)
+        ;;ControlSend, Citra, {%KeyA%}, Citra
+        ;;mSleep(1000)
+        ;;Loop 15 {
+        ;;    ControlSend, Citra, {%KeyA%}, Citra
+        ;;    mSleep(300)
+        ;;}
+        mSleep(1200)
         GuiControl,, StatusLabel, Intro animation
-        sleep 3000
-        ;;this sh*t is so scuffed, i have to PURPOSEFULLY DIE in order to get a static camera view to get a pixel count *massive facepalm*
-        ;; you WILL need a shedinja with toxic orb to forcefully die in 2 turns AND at least 2 pokeballs (turn 1 poison, turn 2 die)
-        GuiControl,, StatusLabel, Switching pokemon...
-        ControlSend, Citra, {%DpadLeft%}, Citra
-        sleep 200
-        ;; press A
-        ControlSend, Citra, {%KeyA%}, Citra
-        sleep 200
-        ;; press right
-        ControlSend, Citra, {%DpadRight%}, Citra
-        sleep 500
-        ;; press A
-        ControlSend, Citra, {%KeyA%}, Citra
-        sleep 300
-        ;; press A
-        ControlSend, Citra, {%KeyA%}, Citra
-        sleep 400
+        ; unstable is a way we can poorly try to shiny spot when the pokemon appears instead
+        if(useUnstableFirst) {
+            mSleep(2000)
+        } else {
+            mSleep(17000)
+            ;;this sh*t is so scuffed, i have to PURPOSEFULLY DIE in order to get a static camera view to get a pixel count *massive facepalm*
+            ;; you WILL need a shedinja with toxic orb to forcefully die in 2 turns AND at least 2 pokeballs (turn 1 poison, turn 2 die)
+            GuiControl,, StatusLabel, Switching pokemon...
+            ControlSend, Citra, {%DpadLeft%}, Citra
+            mSleep(800)
+            ;; press A
+            ControlSend, Citra, {%KeyA%}, Citra
+            mSleep(800)
+            ;; press right
+            ControlSend, Citra, {%DpadRight%}, Citra
+            mSleep(2000)
+            ;; press A
+            ControlSend, Citra, {%KeyA%}, Citra
+            mSleep(1200)
+            ;; press A
+            ControlSend, Citra, {%KeyA%}, Citra
+            mSleep(1600)
+        }
+
     
         GuiControl,, StatusLabel, Checking pixel color...
         ;; last check for pokemon
         Gui, Submit, NoHide
         CoordMode, Mouse, Screen
         CoordMode Pixel, Screen
-        PixelGetColor, cColor, %xCord%, %yCord%, RGB
+        ;PixelGetColor, cColor, %xCord%, %yCord%, RGB
         ;;check cColor = targetColor 5 times
         ;;add localvariable multipleCheck = false;
         ;;if cColor = targetColor, multipleCheck = true;
     
+        pixelIterationCount := 0
         multipleCheck := false
-        Loop 50 {
-            if (stopped) {
-                break
+        if(useUnstableFirst) {
+            Loop 250 {
+                if (stopped) {
+                    break
+                }
+                pixelIterationCount += 1
+                GuiControl,, StatusLabel, Checking pixel color (%pixelIterationCount%)...
+                ;;check if coords are set
+                if (xCord = 0 || yCord = 0) {
+                    MsgBox, 0, Error, Please set a color first. Expected [Hex], got [Hex: %cColor%]
+                }
+
+                PixelGetColor, cColor, %xCord%, %yCord%, RGB
+                mSleep(30)
+                if (!targetColor) {
+                    MsgBox, 0, Error, Please set a color first. Expected [Hex], got [Hex: %cColor%]
+                }
+                if (targetColor = 0) {
+                    MsgBox, 0, Error, Please set a color first. Expected [Hex], got [Hex: %cColor%]
+                }
+                if (targetColor = 0x000000) {
+                    MsgBox, 0, Error, Please set a color first. Expected [Hex], got [Hex: %cColor%]
+                }
+                if (cColor = targetColor) {
+                    multipleCheck := true
+                    break
+                } else {
+                    multipleCheck := false
+                }
             }
-            PixelGetColor, cColor, %xCord%, %yCord%, RGB
-            sleep, 100
-            if (cColor = targetColor) {
-                multipleCheck := true
-                break
-            } else {
-                multipleCheck := false
+        } else {
+            Loop 150 {
+                if (stopped) {
+                    break
+                }
+                pixelIterationCount += 1
+                GuiControl,, StatusLabel, Checking pixel color (%pixelIterationCount%)...
+                PixelGetColor, cColor, %xCord%, %yCord%, RGB
+                mSleep(60)
+                if (cColor = targetColor) {
+                    multipleCheck := true
+                    break
+                } else {
+                    multipleCheck := false
+                }
             }
+                ;sleep, 200
         }
-        sleep, 200
-    
+
+        finishedLoopAt := A_Now
+        loopDuration := finishedLoopAt - startedLoopAt
+        encounterPerHour := Ceil(3600 / loopDuration)
+        GuiControl,, Loops, Stats: %loopDuration%s[%encounterPerHour%En/h]
         if (multipleCheck) {
             currentlyTrue := "="
             if(multipleCheck) {
              GuiControl,, vCurrentlyTrue, =
              lastColor := cColor
              SetKeyDelay, 0, 100
-             Sleep 200
+             mSleep(800)
              IterationCount += 1
              ; updating fields we set above in the GUI
              GuiControl,, vIterationCount, Resets: %IterationCount%
@@ -894,7 +1014,7 @@ citraShinyCatchingInFrontOfPokemon() {
              GuiControl,, vCurrentlyTrue, =
              lastColor := cColor
              SetKeyDelay, 0, 100
-             Sleep 200
+             mSleep(800)
              IterationCount += 1
              GuiControl,, vIterationCount, Resets: %IterationCount%
              GuiControl,, vColorOutput, %cColor%
@@ -1034,22 +1154,32 @@ citraStarterSun() {
 
 resetCitraGame() {
     ensureCitraWinActive()
+    IniRead, speedModifier, % config, Global, speedModifier, 1
     GuiControl,, StatusLabel, Resetting Game...
     ;;Reset game, to do that press L + R + Select + Start at same time
     SendInput {q down}{w down}{n down}{m down};
-    sleep 100
+
+    sleep 500
     ;;release
     SendInput {q up}{w up}{n up}{m up};
-    sleep 1500
+    mSleep(5300)
     GuiControl,, StatusLabel, Game Reset, going to menu...
     SendInput {A down}
-    sleep 100
+    mSleep(400)
     SendInput {A up}
     GuiControl,, StatusLabel, Selecting Save
-    sleep 1000
+    mSleep(4600)
     SendInput {A down}
-    sleep 100
+    mSleep(400)
     SendInput {A up}
     GuiControl,, StatusLabel, Starting...
-    sleep 1500
+    mSleep(4500)
+}
+
+mSleep(time) {
+    SetWorkingDir %A_ScriptDir%
+    config := A_ScriptDir . "\config.ini"
+    IniRead, speedModifier, % config, Global, speedModifier, 1
+    internalTime := Ceil(time / speedModifier)
+    sleep internalTime
 }
